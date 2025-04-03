@@ -205,8 +205,8 @@ class TransferLearning(AbstractModel):
                 #                   d_out=self.embed_size)
 
                 if self.is_mlp_for_user:
-                    self.mlp_user = Expert(d_in=self.init_embed_shape, d_inter=int(multiplier * self.init_embed_shape),
-                                      d_out=self.embed_size)
+                    # self.mlp_user = Expert(d_in=self.init_embed_shape, d_inter=int(multiplier * self.init_embed_shape),
+                    #                   d_out=self.embed_size)
 
                     self.mlp_user = nn.Sequential(
                         nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
