@@ -104,16 +104,19 @@ class AbstractRS(nn.Module):
             print("start testing")
             self.model = self.restore_best_checkpoint(self.data.best_valid_epoch, self.model, self.base_path, self.device)
         end_time = time.time()
+        print(f'training time: {end_time - start_time}')
         self.model.eval() # evaluate the best model
         print_str = "The best epoch is % d, total training cost is %.1f" % (max(self.data.best_valid_epoch, self.start_epoch), end_time - start_time)
         with open(self.base_path +'stats.txt', 'a') as f:
             f.write(print_str + "\n")
 
         n_rets = {}
+        start_time = time.time()
         for i,evaluator in enumerate(self.evaluators[:]):
             _, __, n_ret = evaluation(self.args, self.data, self.model, self.data.best_valid_epoch, self.base_path, evaluator, self.eval_names[i])
             n_rets[self.eval_names[i]] = n_ret
-
+        end_time = time.time()
+        print(f'evaluation time: {end_time - start_time}')
         self.recommend_top_k()
         # self.document_hyper_params_results(self.base_path, n_rets)
         
