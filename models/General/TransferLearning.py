@@ -178,7 +178,7 @@ class TransferLearning(AbstractModel):
         else:
             multiplier = 9 / 32  # for dimension = 4096
 
-        self.is_mlp_for_user = True
+        self.is_mlp_for_user = False
         if (self.model_version == 'homo'):  # Linear mapping
             self.mlp = nn.Sequential(
                 nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
@@ -388,7 +388,10 @@ class TransferLearning(AbstractModel):
             users = run_mlp(self.init_user_cf_embeds, self.data.n_users, self.mlp_user, self.r_user)
             items = run_mlp(self.init_item_cf_embeds, self.data.n_items, self.mlp, self.r)
         else:
-            users = self.mlp_user(self.init_user_cf_embeds)
+            if self.is_mlp_for_user:
+                users = self.mlp_user(self.init_user_cf_embeds)
+            else:
+                users = self.mlp(self.init_user_cf_embeds)
             items = self.mlp(self.init_item_cf_embeds)
 
         return users, items
