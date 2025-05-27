@@ -33,7 +33,7 @@ MANIFEST
 *.manifest
 *.spec
 
-# Installer logs
+# Installer logs_tfce_tuned
 pip-log.txt
 pip-delete-this-directory.txt
 
@@ -136,3 +136,4 @@ data/
 weights/
 scripts/
 gradio_cached_examples/
+/stat_significance/

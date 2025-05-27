@@ -48,24 +48,24 @@ Example of the file structure:
 TFCE-MLP
 ```bash
 # Amazon Game
-nohup python main.py --rs_type General --clear_checkpoints --saveID tfcemlp --dataset amazon_game --model_name TFCEMLP --n_layers 3 --patience 20 --cuda 0 --no_wandb --train_norm --pred_norm --neg_sample 512 --lm_model v3 --model_version mlp --tau 0.2 --infonce 1 --verbose 1 --no-is_one_pos_item --n_pos_samples 3 --hidden_size 128 &> logs/amazon_game.log &
+nohup python main.py --rs_type General --clear_checkpoints --saveID tfcemlp --dataset amazon_game --model_name TFCEMLP --n_layers 3 --patience 20 --cuda 0 --no_wandb --train_norm --pred_norm --neg_sample 512 --lm_model v3 --model_version mlp --tau 0.2 --infonce 1 --verbose 1 --no-is_one_pos_item --n_pos_samples 3 --hidden_size 128 &> logs_tfce_tuned/amazon_game.log &
 
 # Amazon Movie
-nohup python main.py --rs_type General --clear_checkpoints --saveID tfcemlp --dataset amazon_movie --model_name TFCEMLP --n_layers 2 --patience 20 --cuda 0 --no_wandb --train_norm --pred_norm --neg_sample 512 --lm_model v3 --model_version mlp --tau 0.15 --infonce 1 --verbose 1 --no-is_one_pos_item --n_pos_samples 9 --hidden_size 128 &> logs/amazon_movie.log &
+nohup python main.py --rs_type General --clear_checkpoints --saveID tfcemlp --dataset amazon_movie --model_name TFCEMLP --n_layers 2 --patience 20 --cuda 0 --no_wandb --train_norm --pred_norm --neg_sample 512 --lm_model v3 --model_version mlp --tau 0.15 --infonce 1 --verbose 1 --no-is_one_pos_item --n_pos_samples 9 --hidden_size 128 &> logs_tfce_tuned/amazon_movie.log &
 
 # Amazon Book
-nohup python main.py --rs_type General --clear_checkpoints --saveID tfcemlp --dataset amazon_book --model_name TFCEMLP --n_layers 3 --patience 20 --cuda 0 --no_wandb --train_norm --pred_norm --neg_sample 512 --lm_model v3 --model_version mlp --tau 0.15 --infonce 1 --verbose 1 --no-is_one_pos_item --n_pos_samples 7  --hidden_size 256 &> logs/amazon_book.log &```
+nohup python main.py --rs_type General --clear_checkpoints --saveID tfcemlp --dataset amazon_book --model_name TFCEMLP --n_layers 3 --patience 20 --cuda 0 --no_wandb --train_norm --pred_norm --neg_sample 512 --lm_model v3 --model_version mlp --tau 0.15 --infonce 1 --verbose 1 --no-is_one_pos_item --n_pos_samples 7  --hidden_size 256 &> logs_tfce_tuned/amazon_book.log &```
 ```
 
 TFCE
 ```bash
 # Amazon Game
-nohup python main.py --rs_type General --clear_checkpoints --saveID tfce --dataset amazon_game --model_name TFCE --n_layers 4 --cuda 0 --no_wandb --train_norm --pred_norm --lm_model v3 --model_version mlp --infonce 1 --verbose 1 &> logs/amazon_game.log &
+nohup python main.py --rs_type General --clear_checkpoints --saveID tfce --dataset amazon_game --model_name TFCE --n_layers 4 --cuda 0 --no_wandb --train_norm --pred_norm --lm_model v3 --model_version mlp --infonce 1 --verbose 1 &> logs_tfce_tuned/amazon_game.log &
 
 # Amazon Movie
-nohup python main.py --rs_type General --clear_checkpoints --saveID tfce --dataset amazon_movie --model_name TFCE --n_layers 3  --cuda 0 --no_wandb --train_norm --pred_norm  --lm_model v3 --model_version mlp --infonce 1 --verbose 1 &> logs/amazon_movie.log &
+nohup python main.py --rs_type General --clear_checkpoints --saveID tfce --dataset amazon_movie --model_name TFCE --n_layers 3  --cuda 0 --no_wandb --train_norm --pred_norm  --lm_model v3 --model_version mlp --infonce 1 --verbose 1 &> logs_tfce_tuned/amazon_movie.log &
 
 # Amazon Book
-nohup python main.py --rs_type General --clear_checkpoints --saveID tfce --dataset amazon_book --model_name TFCE --n_layers 5 --cuda 0 --no_wandb --train_norm --pred_norm  --lm_model v3 --model_version mlp --infonce 1 --verbose 1 &> logs/amazon_book.log &
+nohup python main.py --rs_type General --clear_checkpoints --saveID tfce --dataset amazon_book --model_name TFCE --n_layers 5 --cuda 0 --no_wandb --train_norm --pred_norm  --lm_model v3 --model_version mlp --infonce 1 --verbose 1 &> logs_tfce_tuned/amazon_book.log &
 ```
 
