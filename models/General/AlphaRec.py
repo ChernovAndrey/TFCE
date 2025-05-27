@@ -145,9 +145,14 @@ class AlphaRec(AbstractModel):
     def init_embedding(self):
         pass
 
+
+
+
+
+
     def compute(self):
-        users_cf_emb = self.mlp(self.init_user_cf_embeds)
-        # users_cf_emb = self.mlp_user(self.init_user_cf_embeds)
+        # users_cf_emb = self.mlp(self.init_user_cf_embeds)
+        users_cf_emb = self.mlp_user(self.init_user_cf_embeds)
         items_cf_emb = self.mlp(self.init_item_cf_embeds)
 
         users_emb = users_cf_emb
