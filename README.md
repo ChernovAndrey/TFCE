@@ -3,6 +3,55 @@
 This repository contains the implementation of **TFCE** and **TFCE-MLP**, developed for recommendation systems.  
 It is a fork of the original [AlphaRec](https://github.com/LehengTHU/AlphaRec) repository.
 
+## 🆕 Multi-Dataset Training
+
+This repository now supports training on multiple datasets simultaneously! This feature allows you to:
+
+- Train recommendation models on several datasets at once
+- Maintain separate interaction graphs for each dataset
+- Ensure negative sampling is isolated within each dataset
+- Use proportional sampling based on dataset sizes
+
+### Multi-Dataset Training Usage
+
+```bash
+# Train on multiple Amazon datasets simultaneously
+python main.py --rs_type General --model_name MF \
+  --multi_datasets amazon_movie amazon_book amazon_game \
+  --multi_datasets_path data/General/ \
+  --proportional_sampling \
+  --batch_size 4096 --lr 0.001 --max_epoch 100
+
+# Train with equal dataset weights
+python main.py --rs_type General --model_name LightGCN \
+  --multi_datasets amazon_movie amazon_book amazon_game \
+  --multi_datasets_path data/General/ \
+  --equal_sampling \
+  --batch_size 2048 --lr 0.001 --max_epoch 200
+
+# Train with custom dataset sampling weights
+python main.py --rs_type General --model_name LightGCN \
+  --multi_datasets amazon_movie amazon_book \
+  --multi_datasets_path data/General/ \
+  --dataset_sampling_weights 0.7 0.3 \
+  --batch_size 2048 --lr 0.001 --max_epoch 200
+```
+
+### Key Features
+
+- **Dataset Isolation**: Each dataset maintains its own interaction graph
+- **Negative Sampling**: Negative samples are drawn only from the same dataset as the positive sample
+- **Proportional Sampling**: Training samples are drawn proportionally to dataset sizes
+- **Flexible Weighting**: Custom sampling weights can be specified for each dataset
+
+### Multi-Dataset Arguments
+
+- `--multi_datasets`: List of dataset names to train on simultaneously
+- `--multi_datasets_path`: Base path where datasets are stored
+- `--proportional_sampling`: Use proportional sampling based on dataset sizes
+- `--equal_sampling`: Use equal sampling weights for all datasets
+- `--dataset_sampling_weights`: Custom weights for dataset sampling (overrides other sampling methods)
+
 ---
 
 ## 🛠 Installation

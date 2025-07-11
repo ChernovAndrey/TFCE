@@ -56,7 +56,13 @@ class AbstractRS(nn.Module):
             self.data = eval(args.model_name + '_Data(args)') 
         except:
             print("no special dataset")
-            self.data = AbstractData(args) # load data from the path
+            # Check if we're using multi-dataset training
+            if hasattr(args, 'multi_datasets') and args.multi_datasets:
+                print("Using multi-dataset training")
+                from .abstract_data import MultiDatasetData
+                self.data = MultiDatasetData(args)
+            else:
+                self.data = AbstractData(args) # load data from the path
         
         self.n_users = self.data.n_users
         self.n_items = self.data.n_items
@@ -457,6 +463,50 @@ class AbstractRS(nn.Module):
                 evaluators.append(eval_test_)
                 eval_names.append(data_name + "_valid")
                 eval_names.append(data_name + "_test")
+                
+        elif hasattr(data, 'dataset_info') and data.dataset_info:  # Multi-dataset training
+            # Combined evaluation
+            eval_valid = ProxyEvaluator(data,eval_train_user_list,data.valid_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.test_user_list]))  
+            eval_test = ProxyEvaluator(data,eval_train_user_list,data.test_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.valid_user_list]))
+
+            evaluators=[eval_valid, eval_test]
+            eval_names=["valid", "test"]
+            
+            # Per-dataset evaluation
+            for dataset_name, dataset_info in data.dataset_info.items():
+                # Create masked items (exclude items from other datasets)
+                dataset_item_range = set(range(dataset_info['item_offset'], 
+                                             dataset_info['item_offset'] + dataset_info['n_items']))
+                mask_ = list(set(range(data.n_items)) - dataset_item_range)
+                
+                # Create user mappings for this dataset
+                dataset_train = {}
+                dataset_valid = {}
+                dataset_test = {}
+                
+                for user_id in range(dataset_info['user_offset'], 
+                                   dataset_info['user_offset'] + dataset_info['n_users']):
+                    if user_id in data.train_user_list:
+                        dataset_train[user_id] = data.train_user_list[user_id]
+                    if user_id in data.valid_user_list:
+                        dataset_valid[user_id] = data.valid_user_list[user_id]
+                    if user_id in data.test_user_list:
+                        dataset_test[user_id] = data.test_user_list[user_id]
+                
+                # Create evaluators for this dataset
+                if dataset_valid:
+                    eval_valid_ = ProxyEvaluator(data, dataset_train, dataset_valid, top_k=[K_value],
+                                               dump_dict=merge_user_list([dataset_train, dataset_test]),
+                                               masked_items=mask_)
+                    evaluators.append(eval_valid_)
+                    eval_names.append(f"{dataset_name}_valid")
+                
+                if dataset_test:
+                    eval_test_ = ProxyEvaluator(data, dataset_train, dataset_test, top_k=[K_value],
+                                              dump_dict=merge_user_list([dataset_train, dataset_valid]),
+                                              masked_items=mask_)
+                    evaluators.append(eval_test_)
+                    eval_names.append(f"{dataset_name}_test")
             # mask_movie = {k: list(range(3043, 3043+40523)) for k in data.train_user_list_movie}
             # eval_valid_movie = ProxyEvaluator(data,data.train_user_list_movie,data.valid_user_list_movie,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_movie, data.test_user_list_movie, mask_movie]))
             # eval_test_movie = ProxyEvaluator(data,data.train_user_list_movie,data.test_user_list_movie,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_movie, data.valid_user_list_movie, mask_movie]))
