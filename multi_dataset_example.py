@@ -58,8 +58,10 @@ def create_multi_dataset_args():
                        help='List of datasets to train on simultaneously')
     parser.add_argument('--multi_datasets_path', type=str, default='data/General/',
                        help='Base path for multi-dataset training')
-    parser.add_argument('--proportional_sampling', action='store_true', default=True,
+    parser.add_argument('--proportional_sampling', action='store_true', default=False,
                        help='Use proportional sampling based on dataset sizes')
+    parser.add_argument('--equal_sampling', action='store_true', default=True,
+                       help='Use equal sampling weights for all datasets')
     parser.add_argument('--dataset_sampling_weights', nargs='+', type=float, default=None,
                        help='Custom weights for dataset sampling')
     

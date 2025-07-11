@@ -518,6 +518,7 @@ class MultiDatasetData(AbstractData):
         self.multi_datasets = args.multi_datasets
         self.multi_datasets_path = args.multi_datasets_path if args.multi_datasets_path else args.data_path
         self.proportional_sampling = args.proportional_sampling
+        self.equal_sampling = getattr(args, 'equal_sampling', False)
         self.dataset_sampling_weights = args.dataset_sampling_weights
         
         # Initialize dataset-specific information
@@ -617,20 +618,29 @@ class MultiDatasetData(AbstractData):
         # Initialize popularity and other metrics
         self._compute_popularity_metrics()
         
-        # Calculate dataset sampling weights if proportional sampling is enabled
-        if self.proportional_sampling:
+        # Calculate dataset sampling weights
+        if self.dataset_sampling_weights:
+            # Custom weights override everything
+            if len(self.dataset_sampling_weights) != len(self.multi_datasets):
+                raise ValueError("Number of dataset sampling weights must match number of datasets")
+            self.dataset_weights = dict(zip(self.multi_datasets, self.dataset_sampling_weights))
+        elif self.proportional_sampling:
+            # Proportional to dataset sizes
             total_interactions = sum(info['n_interactions'] for info in self.dataset_info.values())
             self.dataset_weights = {
                 name: info['n_interactions'] / total_interactions 
                 for name, info in self.dataset_info.items()
             }
-        elif self.dataset_sampling_weights:
-            if len(self.dataset_sampling_weights) != len(self.multi_datasets):
-                raise ValueError("Number of dataset sampling weights must match number of datasets")
-            self.dataset_weights = dict(zip(self.multi_datasets, self.dataset_sampling_weights))
-        else:
+        elif self.equal_sampling:
             # Equal weights
             self.dataset_weights = {name: 1.0 / len(self.multi_datasets) for name in self.multi_datasets}
+        else:
+            # Default to proportional sampling
+            total_interactions = sum(info['n_interactions'] for info in self.dataset_info.values())
+            self.dataset_weights = {
+                name: info['n_interactions'] / total_interactions 
+                for name, info in self.dataset_info.items()
+            }
             
         print(f"Dataset sampling weights: {self.dataset_weights}")
         

@@ -22,6 +22,13 @@ python main.py --rs_type General --model_name MF \
   --proportional_sampling \
   --batch_size 4096 --lr 0.001 --max_epoch 100
 
+# Train with equal dataset weights
+python main.py --rs_type General --model_name LightGCN \
+  --multi_datasets amazon_movie amazon_book amazon_game \
+  --multi_datasets_path data/General/ \
+  --equal_sampling \
+  --batch_size 2048 --lr 0.001 --max_epoch 200
+
 # Train with custom dataset sampling weights
 python main.py --rs_type General --model_name LightGCN \
   --multi_datasets amazon_movie amazon_book \
@@ -41,8 +48,9 @@ python main.py --rs_type General --model_name LightGCN \
 
 - `--multi_datasets`: List of dataset names to train on simultaneously
 - `--multi_datasets_path`: Base path where datasets are stored
-- `--proportional_sampling`: Use proportional sampling based on dataset sizes (default: True)
-- `--dataset_sampling_weights`: Custom weights for dataset sampling (overrides proportional sampling)
+- `--proportional_sampling`: Use proportional sampling based on dataset sizes
+- `--equal_sampling`: Use equal sampling weights for all datasets
+- `--dataset_sampling_weights`: Custom weights for dataset sampling (overrides other sampling methods)
 
 ---
 

@@ -39,10 +39,12 @@ def parse_args():
                         help='List of datasets to train on simultaneously (e.g., --multi_datasets amazon_movie amazon_book amazon_game)')
     parser.add_argument('--multi_datasets_path', type=str, default=None,
                         help='Base path for multi-dataset training. If not specified, uses data_path')
-    parser.add_argument('--proportional_sampling', action="store_true", default=True,
+    parser.add_argument('--proportional_sampling', action="store_true", default=False,
                         help='Whether to sample proportionally to dataset size')
+    parser.add_argument('--equal_sampling', action="store_true", default=False,
+                        help='Whether to use equal sampling weights for all datasets')
     parser.add_argument('--dataset_sampling_weights', nargs='+', type=float, default=None,
-                        help='Custom weights for dataset sampling (if not proportional)')
+                        help='Custom weights for dataset sampling (overrides proportional/equal sampling)')
 
     # Model Args
     parser.add_argument('--batch_size', type=int, default=4096,
