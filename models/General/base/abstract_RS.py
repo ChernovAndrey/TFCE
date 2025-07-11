@@ -56,7 +56,13 @@ class AbstractRS(nn.Module):
             self.data = eval(args.model_name + '_Data(args)') 
         except:
             print("no special dataset")
-            self.data = AbstractData(args) # load data from the path
+            # Check if we're using multi-dataset training
+            if hasattr(args, 'multi_datasets') and args.multi_datasets:
+                print("Using multi-dataset training")
+                from .abstract_data import MultiDatasetData
+                self.data = MultiDatasetData(args)
+            else:
+                self.data = AbstractData(args) # load data from the path
         
         self.n_users = self.data.n_users
         self.n_items = self.data.n_items

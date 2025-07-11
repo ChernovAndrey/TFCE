@@ -506,3 +506,310 @@ class TrainDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.n_observations
+
+
+class MultiDatasetData(AbstractData):
+    """
+    Multi-dataset data class that handles training on multiple datasets simultaneously.
+    Each dataset maintains its own interaction graph and negative sampling is isolated within datasets.
+    """
+    
+    def __init__(self, args):
+        self.multi_datasets = args.multi_datasets
+        self.multi_datasets_path = args.multi_datasets_path if args.multi_datasets_path else args.data_path
+        self.proportional_sampling = args.proportional_sampling
+        self.dataset_sampling_weights = args.dataset_sampling_weights
+        
+        # Initialize dataset-specific information
+        self.dataset_info = {}
+        self.dataset_user_offsets = {}
+        self.dataset_item_offsets = {}
+        
+        # Call parent constructor but override some methods
+        super().__init__(args)
+        
+    def load_data(self):
+        """Load data from multiple datasets and combine them"""
+        print(f"Loading multi-dataset data from: {self.multi_datasets}")
+        
+        # Initialize combined data structures
+        self.train_user_list = collections.defaultdict(list)
+        self.valid_user_list = collections.defaultdict(list)
+        self.test_user_list = collections.defaultdict(list)
+        
+        all_users = set()
+        all_items = set()
+        user_offset = 0
+        item_offset = 0
+        
+        self.trainUser = []
+        self.trainItem = []
+        
+        for dataset_idx, dataset_name in enumerate(self.multi_datasets):
+            print(f"Processing dataset {dataset_idx}: {dataset_name}")
+            
+            # Load individual dataset
+            dataset_path = f"{self.multi_datasets_path}{dataset_name}/cf_data/"
+            train_file = dataset_path + 'train.txt'
+            valid_file = dataset_path + 'valid.txt'
+            test_file = dataset_path + 'test.txt'
+            
+            # Load data for this dataset
+            train_user_list, train_item_set, train_item_list, trainUser, trainItem = helper_load_train(train_file)
+            valid_user_list, valid_item_set = helper_load(valid_file)
+            test_user_list, test_item_set = helper_load(test_file)
+            
+            # Get unique users and items for this dataset
+            dataset_users = set(train_user_list.keys())
+            dataset_items = set().union(train_item_set, valid_item_set, test_item_set)
+            
+            # Store dataset information
+            self.dataset_info[dataset_name] = {
+                'users': sorted(list(dataset_users)),
+                'items': sorted(list(dataset_items)),
+                'n_users': len(dataset_users),
+                'n_items': len(dataset_items),
+                'n_interactions': sum(len(items) for items in train_user_list.values()),
+                'user_offset': user_offset,
+                'item_offset': item_offset,
+                'train_user_list': train_user_list,
+                'valid_user_list': valid_user_list,
+                'test_user_list': test_user_list
+            }
+            
+            print(f"  Dataset {dataset_name}: {len(dataset_users)} users, {len(dataset_items)} items")
+            
+            # Combine users and items with offsets to ensure no conflicts
+            for user in dataset_users:
+                adjusted_user = user + user_offset
+                all_users.add(adjusted_user)
+                
+                # Map original user interactions to adjusted IDs
+                if user in train_user_list:
+                    self.train_user_list[adjusted_user] = [item + item_offset for item in train_user_list[user]]
+                    # Add to global trainUser/trainItem lists
+                    self.trainUser.extend([adjusted_user] * len(train_user_list[user]))
+                    self.trainItem.extend([item + item_offset for item in train_user_list[user]])
+                    
+                if user in valid_user_list:
+                    self.valid_user_list[adjusted_user] = [item + item_offset for item in valid_user_list[user]]
+                    
+                if user in test_user_list:
+                    self.test_user_list[adjusted_user] = [item + item_offset for item in test_user_list[user]]
+            
+            # Add items with offset
+            for item in dataset_items:
+                all_items.add(item + item_offset)
+            
+            # Update offsets for next dataset
+            user_offset += len(dataset_users)
+            item_offset += len(dataset_items)
+        
+        # Set combined dataset properties
+        self.users = sorted(list(all_users))
+        self.items = sorted(list(all_items))
+        self.n_users = len(self.users)
+        self.n_items = len(self.items)
+        self.n_observations = sum(len(items) for items in self.train_user_list.values())
+        
+        print(f"Combined dataset: {self.n_users} users, {self.n_items} items, {self.n_observations} interactions")
+        
+        # Initialize popularity and other metrics
+        self._compute_popularity_metrics()
+        
+        # Calculate dataset sampling weights if proportional sampling is enabled
+        if self.proportional_sampling:
+            total_interactions = sum(info['n_interactions'] for info in self.dataset_info.values())
+            self.dataset_weights = {
+                name: info['n_interactions'] / total_interactions 
+                for name, info in self.dataset_info.items()
+            }
+        elif self.dataset_sampling_weights:
+            if len(self.dataset_sampling_weights) != len(self.multi_datasets):
+                raise ValueError("Number of dataset sampling weights must match number of datasets")
+            self.dataset_weights = dict(zip(self.multi_datasets, self.dataset_sampling_weights))
+        else:
+            # Equal weights
+            self.dataset_weights = {name: 1.0 / len(self.multi_datasets) for name in self.multi_datasets}
+            
+        print(f"Dataset sampling weights: {self.dataset_weights}")
+        
+        # Set sample_items for negative sampling
+        self.sample_items = np.array(self.items, dtype=int)
+        
+        # Clear unused attributes
+        self.selected_train, self.selected_valid, self.selected_test = [], [], []
+        self.nu_info = []
+        self.ni_info = []
+        
+    def _compute_popularity_metrics(self):
+        """Compute popularity metrics for the combined dataset"""
+        # Build item popularity
+        train_item_list = collections.defaultdict(list)
+        for user, items in self.train_user_list.items():
+            for item in items:
+                train_item_list[item].append(user)
+        
+        self.train_item_list = train_item_list
+        
+        # Compute popularity
+        pop_dict = {}
+        for item, users in train_item_list.items():
+            pop_dict[item] = len(users) + 1
+        for item in range(0, self.n_items):
+            if item not in pop_dict:
+                pop_dict[item] = 1
+        
+        self.population_list = [pop_dict[item] for item in range(self.n_items)]
+        
+        # User and item popularity indices
+        pop_user = {key: len(value) for key, value in self.train_user_list.items()}
+        pop_item = {key: len(value) for key, value in train_item_list.items()}
+        
+        # Convert to indices
+        sorted_pop_user = sorted(list(set(pop_user.values())))
+        sorted_pop_item = sorted(list(set(pop_item.values())))
+        
+        user_idx = {val: idx for idx, val in enumerate(sorted_pop_user)}
+        item_idx = {val: idx for idx, val in enumerate(sorted_pop_item)}
+        
+        self.user_pop_idx = np.zeros(self.n_users, dtype=int)
+        self.item_pop_idx = np.zeros(self.n_items, dtype=int)
+        
+        for user, pop in pop_user.items():
+            self.user_pop_idx[user] = user_idx[pop]
+        for item, pop in pop_item.items():
+            self.item_pop_idx[item] = item_idx[pop]
+            
+        self.user_pop_max = max(self.user_pop_idx)
+        self.item_pop_max = max(self.item_pop_idx)
+        
+    def get_user_dataset(self, user_id):
+        """Get which dataset a user belongs to"""
+        for dataset_name, info in self.dataset_info.items():
+            if info['user_offset'] <= user_id < info['user_offset'] + info['n_users']:
+                return dataset_name
+        return None
+        
+    def get_item_dataset(self, item_id):
+        """Get which dataset an item belongs to"""
+        for dataset_name, info in self.dataset_info.items():
+            if info['item_offset'] <= item_id < info['item_offset'] + info['n_items']:
+                return dataset_name
+        return None
+        
+    def get_dataset_items(self, dataset_name):
+        """Get all item IDs for a specific dataset"""
+        info = self.dataset_info[dataset_name]
+        return list(range(info['item_offset'], info['item_offset'] + info['n_items']))
+        
+    def get_dataloader(self):
+        """Create multi-dataset aware dataloader"""
+        self.train_data = MultiDatasetTrainDataset(
+            self.model_name, self.users, self.train_user_list, self.user_pop_idx,
+            self.item_pop_idx, self.neg_sample, self.n_observations, self.n_items, 
+            self.sample_items, self.infonce, self.items, self.nu_info, self.ni_info, 
+            self.is_one_pos_item, n_pos_samples=self.n_pos_samples, 
+            user_neighbors=self.user_neighbors, dataset_info=self.dataset_info
+        )
+
+        self.train_loader = DataLoader(self.train_data, batch_size=self.batch_size, shuffle=True,
+                                       num_workers=self.num_workers, drop_last=True)
+
+
+class MultiDatasetTrainDataset(TrainDataset):
+    """
+    Multi-dataset training dataset that ensures negative sampling is done within the same dataset
+    """
+    
+    def __init__(self, model_name, users, train_user_list, user_pop_idx, item_pop_idx, neg_sample,
+                 n_observations, n_items, sample_items, infonce, items, nu_info=None, ni_info=None,
+                 is_one_pos_item=True, n_pos_samples=15, user_neighbors=None, dataset_info=None):
+        super().__init__(model_name, users, train_user_list, user_pop_idx, item_pop_idx, neg_sample,
+                         n_observations, n_items, sample_items, infonce, items, nu_info, ni_info,
+                         is_one_pos_item, n_pos_samples, user_neighbors)
+        
+        self.dataset_info = dataset_info or {}
+        
+        # Create mapping from user to dataset
+        self.user_to_dataset = {}
+        for dataset_name, info in self.dataset_info.items():
+            for user_id in range(info['user_offset'], info['user_offset'] + info['n_users']):
+                self.user_to_dataset[user_id] = dataset_name
+    
+    def __getitem__(self, index):
+        index = index % len(self.users)
+        user = self.users[index]
+        
+        if self.train_user_list[user] == []:
+            pos_items = 0
+            mask = 0
+        else:
+            if self.is_one_pos_item:
+                pos_item = rd.choice(self.train_user_list[user])
+                mask = 1
+            else:
+                pos_item = rd.sample(self.train_user_list[user], self.n_pos_samples) if \
+                    len(self.train_user_list[user]) > self.n_pos_samples else \
+                    self.train_user_list[user][:self.n_pos_samples]
+                mask = torch.zeros(self.n_pos_samples).long()
+                mask[:len(pos_item)] = 1
+                if len(pos_item) < self.n_pos_samples:
+                    pos_item += [-1] * (self.n_pos_samples - len(pos_item))
+                pos_item = torch.tensor(pos_item).long()
+        
+        user_pop = self.user_pop_idx[user]
+        if self.is_one_pos_item:
+            pos_item_pop = self.item_pop_idx[pos_item]
+        else:
+            pos_item_pop = -1
+        
+        if self.infonce == 1 and self.neg_sample == -1:  # in-batch
+            return user, pos_item, user_pop, pos_item_pop
+
+        elif self.infonce == 1 and self.neg_sample != -1:  # InfoNCE negative sampling
+            # Multi-dataset aware negative sampling
+            user_dataset = self.user_to_dataset.get(user)
+            if user_dataset and user_dataset in self.dataset_info:
+                # Get items only from the same dataset
+                dataset_info = self.dataset_info[user_dataset]
+                dataset_items = list(range(dataset_info['item_offset'], 
+                                         dataset_info['item_offset'] + dataset_info['n_items']))
+                
+                # Sample negative items only from the same dataset
+                neg_items = randint_choice(len(dataset_items), size=self.neg_sample, 
+                                         exclusion=[item - dataset_info['item_offset'] 
+                                                   for item in self.train_user_list[user]])
+                neg_items = [dataset_items[idx] for idx in neg_items]
+            else:
+                # Fallback to original behavior
+                neg_items = randint_choice(self.n_items, size=self.neg_sample, 
+                                         exclusion=self.train_user_list[user])
+            
+            neg_items_pop = self.item_pop_idx[neg_items]
+            return user, pos_item, user_pop, pos_item_pop, torch.tensor(neg_items).long(), neg_items_pop, mask
+
+        else:  # BPR negative sampling
+            # Multi-dataset aware negative sampling for BPR
+            user_dataset = self.user_to_dataset.get(user)
+            if user_dataset and user_dataset in self.dataset_info:
+                dataset_info = self.dataset_info[user_dataset]
+                dataset_items = list(range(dataset_info['item_offset'], 
+                                         dataset_info['item_offset'] + dataset_info['n_items']))
+                
+                # Sample one negative item from the same dataset
+                while True:
+                    idx = rd.randint(0, len(dataset_items) - 1)
+                    neg_item = dataset_items[idx]
+                    if neg_item not in self.train_user_list[user]:
+                        break
+            else:
+                # Fallback to original behavior
+                while True:
+                    idx = rd.randint(0, self.n_items - 1)
+                    neg_item = self.items[idx]
+                    if neg_item not in self.train_user_list[user]:
+                        break
+            
+            neg_item_pop = self.item_pop_idx[neg_item]
+            return user, pos_item, user_pop, pos_item_pop, neg_item, neg_item_pop
