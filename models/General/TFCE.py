@@ -51,20 +51,8 @@ class TFCE_RS(AbstractRS):
         with open(file_path, 'w') as f:
             json.dump(convert_np(n_ret), f, indent=2)
 
-    def eval_and_check_early_stop(self, epoch):
-        self.model.eval()
-        for i, evaluator in enumerate(self.evaluators):
-            tt1 = time.time()
-            is_best, temp_flag, n_ret = evaluation(self.args, self.data, self.model, epoch, self.base_path, evaluator,
-                                                   self.eval_names[i])
-            tt2 = time.time()
-            print("Evaluating %d [%.1fs]: %s" % (i, tt2 - tt1, self.eval_names[i]))
-            if temp_flag:
-                self.flag = True
-            self.save_eval_results(n_ret, self.eval_names[i])
-        # checkpoint_buffer=save_checkpoint(self.model, epoch, self.base_path, self.checkpoint_buffer, self.args.max2keep)
-
-        self.model.train()
+    def compute(self):
+        return self.init_user_cf_embeds, self.init_item_cf_embeds
 
     def execute(self):
 

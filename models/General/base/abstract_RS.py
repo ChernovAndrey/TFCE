@@ -295,26 +295,49 @@ class AbstractRS(nn.Module):
     def eval_and_check_early_stop(self, epoch):
         self.model.eval()
 
-        for i,evaluator in enumerate(self.evaluators):
-            tt1 = time.time()
-            is_best, temp_flag, n_ret = evaluation(self.args, self.data, self.model, epoch, self.base_path, evaluator, self.eval_names[i])
-            tt2 = time.time()
-            print("Evaluating %d [%.1fs]: %s" % (i, tt2 - tt1, self.eval_names[i]))
-            if(not self.args.no_wandb):
-                wandb.log(
-                    data = {f"Recall@{self.Ks}": n_ret['recall'], 
-                            f"Hit Ratio@{self.Ks}": n_ret['recall'],
-                            f"Precision@{self.Ks}": n_ret['precision'],
-                            f"NDCG@{self.Ks}": n_ret['ndcg']},
-                    step = epoch
-                )
-            if is_best:
-                checkpoint_buffer=save_checkpoint(self.model, epoch, self.base_path, self.checkpoint_buffer, self.args.max2keep)
-            
-            # early stop?
-            if temp_flag:
-                self.flag = True
-        # checkpoint_buffer=save_checkpoint(self.model, epoch, self.base_path, self.checkpoint_buffer, self.args.max2keep)
+        # During training, only evaluate on the combined dataset (first two evaluators)
+        if not self.test_only:
+            # Only use the first two evaluators (valid and test for combined dataset)
+            for i in range(min(2, len(self.evaluators))):
+                tt1 = time.time()
+                is_best, temp_flag, n_ret = evaluation(self.args, self.data, self.model, epoch, self.base_path, self.evaluators[i], self.eval_names[i])
+                tt2 = time.time()
+                print("Evaluating %d [%.1fs]: %s" % (i, tt2 - tt1, self.eval_names[i]))
+                if(not self.args.no_wandb):
+                    wandb.log(
+                        data = {f"Recall@{self.Ks}": n_ret['recall'], 
+                                f"Hit Ratio@{self.Ks}": n_ret['recall'],
+                                f"Precision@{self.Ks}": n_ret['precision'],
+                                f"NDCG@{self.Ks}": n_ret['ndcg']},
+                        step = epoch
+                    )
+                if is_best:
+                    checkpoint_buffer=save_checkpoint(self.model, epoch, self.base_path, self.checkpoint_buffer, self.args.max2keep)
+                
+                # early stop?
+                if temp_flag:
+                    self.flag = True
+        else:
+            # During testing, evaluate on all datasets
+            for i, evaluator in enumerate(self.evaluators):
+                tt1 = time.time()
+                is_best, temp_flag, n_ret = evaluation(self.args, self.data, self.model, epoch, self.base_path, evaluator, self.eval_names[i])
+                tt2 = time.time()
+                print("Evaluating %d [%.1fs]: %s" % (i, tt2 - tt1, self.eval_names[i]))
+                if(not self.args.no_wandb):
+                    wandb.log(
+                        data = {f"Recall@{self.Ks}": n_ret['recall'], 
+                                f"Hit Ratio@{self.Ks}": n_ret['recall'],
+                                f"Precision@{self.Ks}": n_ret['precision'],
+                                f"NDCG@{self.Ks}": n_ret['ndcg']},
+                        step = epoch
+                    )
+                if is_best:
+                    checkpoint_buffer=save_checkpoint(self.model, epoch, self.base_path, self.checkpoint_buffer, self.args.max2keep)
+                
+                # early stop?
+                if temp_flag:
+                    self.flag = True
         
         self.model.train()
     
@@ -408,35 +431,6 @@ class AbstractRS(nn.Module):
 
         return model
     
-    # def get_evaluators(self, data):
-    #     #if not self.args.pop_test:
-    #     K_value = self.args.Ks
-    #     if self.args.nodrop: # whether using the enhanced dataset
-    #         eval_train_user_list = data.train_nodrop_user_list
-    #     else:
-    #         eval_train_user_list = data.train_user_list
-        
-    #     # if self.args.candidate:
-    #     #     eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list, data.test_user_list]))
-    #     #     eval_test = ProxyEvaluator(data,data.train_user_list,data.test_user_list,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list, data.valid_user_list]), user_neg_test = data.test_neg_user_list)
-
-    #     # else: 
-    #     #     eval_valid = ProxyEvaluator(data,data.train_user_list,data.valid_user_list,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list, data.test_user_list]))  
-    #     #     eval_test = ProxyEvaluator(data,data.train_user_list,data.test_user_list,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list, data.valid_user_list]))
-
-
-    #     if self.args.candidate:
-    #         eval_valid = ProxyEvaluator(data,eval_train_user_list,data.valid_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.test_user_list]))
-    #         eval_test = ProxyEvaluator(data,eval_train_user_list,data.test_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.valid_user_list]), user_neg_test = data.test_neg_user_list)
-
-    #     else: 
-    #         eval_valid = ProxyEvaluator(data,eval_train_user_list,data.valid_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.test_user_list]))  
-    #         eval_test = ProxyEvaluator(data,eval_train_user_list,data.test_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.valid_user_list]))
-
-    #     evaluators=[eval_valid, eval_test]
-    #     eval_names=["valid", "test"]
-
-    #     return evaluators, eval_names
 
 
 
@@ -507,47 +501,6 @@ class AbstractRS(nn.Module):
                                               masked_items=mask_)
                     evaluators.append(eval_test_)
                     eval_names.append(f"{dataset_name}_test")
-            # mask_movie = {k: list(range(3043, 3043+40523)) for k in data.train_user_list_movie}
-            # eval_valid_movie = ProxyEvaluator(data,data.train_user_list_movie,data.valid_user_list_movie,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_movie, data.test_user_list_movie, mask_movie]))
-            # eval_test_movie = ProxyEvaluator(data,data.train_user_list_movie,data.test_user_list_movie,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_movie, data.valid_user_list_movie, mask_movie]))
-
-            # mask_book = {k: list(range(0, 3043)) for k in data.train_user_list_book}
-            # eval_valid_book = ProxyEvaluator(data,data.train_user_list_book,data.valid_user_list_book,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_book, data.test_user_list_book, mask_book]))
-            # eval_test_book = ProxyEvaluator(data,data.train_user_list_book,data.test_user_list_book,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_book, data.valid_user_list_book, mask_book]))
-
-            # mask_movie = {k: list(range(3043, 3043+40523+13420)) for k in data.train_user_list_movie}
-            # mask_movie = list(range(3043, 3043+40523+13420))
-            # eval_valid_movie = ProxyEvaluator(data,data.train_user_list_movie,data.valid_user_list_movie,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_movie, data.test_user_list_movie]), masked_items=mask_movie)
-            # eval_test_movie = ProxyEvaluator(data,data.train_user_list_movie,data.test_user_list_movie,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_movie, data.valid_user_list_movie]), masked_items=mask_movie)
-
-            # # mask_book = {k: list(range(0, 3043)) + list(range(3043+40523, 3043+40523+13420)) for k in data.train_user_list_book}
-            # mask_book = list(range(0, 3043)) + list(range(3043+40523, 3043+40523+13420)) 
-            # eval_valid_book = ProxyEvaluator(data,data.train_user_list_book,data.valid_user_list_book,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_book, data.test_user_list_book]), masked_items=mask_book)
-            # eval_test_book = ProxyEvaluator(data,data.train_user_list_book,data.test_user_list_book,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_book, data.valid_user_list_book]), masked_items=mask_book)
-
-            # # mask_game = {k: list(range(0, 3043+40523)) for k in data.train_user_list_game}
-            # mask_game = list(range(0, 3043+40523))
-            # eval_valid_game = ProxyEvaluator(data,data.train_user_list_game,data.valid_user_list_game,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_game, data.test_user_list_game]), masked_items=mask_game)
-            # eval_test_game = ProxyEvaluator(data,data.train_user_list_game,data.test_user_list_game,top_k=[K_value],dump_dict=merge_user_list([data.train_user_list_game, data.valid_user_list_game]), masked_items=mask_game)
-
-            # evaluators=[eval_valid, eval_test, eval_valid_movie, eval_test_movie, eval_valid_book, eval_test_book, eval_valid_game, eval_test_game]
-            # eval_names=["valid", "test", "valid_movie", "test_movie", "valid_book", "test_book", "valid_game", "test_game"]
-
-            # evaluators=[eval_valid_movie, eval_test_movie, eval_valid_book, eval_test_book]
-            # eval_names=["valid_movie", "test_movie", "valid_book", "test_book"]
-
-            # evaluators=[eval_valid, eval_test, eval_valid_movie, eval_test_movie, eval_valid_book, eval_test_book]
-            # eval_names=["valid", "test", "valid_movie", "test_movie", "valid_book", "test_book"]
-
-            # evaluators=[eval_valid, eval_test, eval_valid_movie, eval_test_movie]
-            # eval_names=["valid", "test", "valid_movie", "test_movie"]
-
-            # eval_valid = ProxyEvaluator(data,eval_train_user_list,data.valid_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.test_user_list]))  
-            # eval_test = ProxyEvaluator(data,eval_train_user_list,data.test_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.valid_user_list]))
-
-            # evaluators=[eval_valid, eval_test]
-            # eval_names=["valid", "test"]
-
         else: 
             eval_valid = ProxyEvaluator(data,eval_train_user_list,data.valid_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.test_user_list]))  
             eval_test = ProxyEvaluator(data,eval_train_user_list,data.test_user_list,top_k=[K_value],dump_dict=merge_user_list([eval_train_user_list, data.valid_user_list]))
