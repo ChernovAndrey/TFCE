@@ -586,7 +586,7 @@ class MultiDatasetData(AbstractData):
         user_cf_embeds_dict = user_cf_embeds.to_dict()
         user_cf_embeds_dict = dict(sorted(user_cf_embeds_dict.items(), key=lambda item: item[0]))
         self.user_cf_embeds = np.array(list(user_cf_embeds_dict.values()))
-        
+
     def load_data(self):
         """Load data from multiple datasets and combine them"""
         print(f"Loading multi-dataset data from: {self.multi_datasets}")
@@ -595,6 +595,8 @@ class MultiDatasetData(AbstractData):
         self.train_user_list = collections.defaultdict(list)
         self.valid_user_list = collections.defaultdict(list)
         self.test_user_list = collections.defaultdict(list)
+        self.test_neg_user_list = collections.defaultdict(list)  # Initialize test negatives
+        self.test_neg_item_list = []  # Initialize test negative items
         
         all_users = set()
         all_items = set()
@@ -612,11 +614,18 @@ class MultiDatasetData(AbstractData):
             train_file = os.path.join(dataset_path, 'train.txt')
             valid_file = os.path.join(dataset_path, 'valid.txt')
             test_file = os.path.join(dataset_path, 'test.txt')
+            test_neg_file = os.path.join(dataset_path, 'test_neg.txt')
             
             # Load data for this dataset
             train_user_list, train_item_set, train_item_list, trainUser, trainItem = helper_load_train(train_file)
             valid_user_list, valid_item_set = helper_load(valid_file)
             test_user_list, test_item_set = helper_load(test_file)
+            
+            # Load test negatives if they exist
+            if os.path.exists(test_neg_file):
+                test_neg_user_list, test_neg_item_list = helper_load(test_neg_file)
+            else:
+                test_neg_user_list, test_neg_item_list = {}, []
             
             # Get unique users and items for this dataset
             dataset_users = set(train_user_list.keys())
@@ -634,6 +643,7 @@ class MultiDatasetData(AbstractData):
                 'train_user_list': train_user_list,
                 'valid_user_list': valid_user_list,
                 'test_user_list': test_user_list,
+                'test_neg_user_list': test_neg_user_list,
                 'path': dataset_path  # Store the original dataset path
             }
             
@@ -656,6 +666,10 @@ class MultiDatasetData(AbstractData):
                     
                 if user in test_user_list:
                     self.test_user_list[adjusted_user] = [item + item_offset for item in test_user_list[user]]
+                
+                # Add test negatives with adjusted offsets
+                if user in test_neg_user_list:
+                    self.test_neg_user_list[adjusted_user] = [item + item_offset for item in test_neg_user_list[user]]
             
             # Add items with offset
             for item in dataset_items:

@@ -168,7 +168,7 @@ class AbstractRS(nn.Module):
             prefix = args.saveID
         self.saveID = prefix + '_' + self.train_pred_mode + "_Ks=" + str(args.Ks) + '_patience=' + str(args.patience)\
             + "_n_layers=" + str(args.n_layers) + "_batch_size=" + str(args.batch_size)\
-                + "_neg_sample=" + str(args.neg_sample) + "_lr=" + str(args.lr) 
+                + "_neg_sample=" + str(args.neg_sample) + "_lr=" + str(args.lr) + "_hidden_size=" + str(args.hidden_size)
         
         for arg in special_args:
             print(arg, getattr(args, arg))
