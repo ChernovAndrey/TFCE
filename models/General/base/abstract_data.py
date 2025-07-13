@@ -154,33 +154,118 @@ class AbstractData:
 
     # self.trainUser and self.trainItem are respectively the users and items in the training set, in the form of an interaction list.
     def load_data(self):
-        self.train_user_list, train_item, self.train_item_list, self.trainUser, self.trainItem = helper_load_train(
+        # Load raw data
+        raw_train_user_list, train_item, raw_train_item_list, raw_trainUser, raw_trainItem = helper_load_train(
             self.train_file)
-        self.valid_user_list, valid_item = helper_load(self.valid_file)
+        raw_valid_user_list, valid_item = helper_load(self.valid_file)
 
-        self.test_user_list, self.test_item_list = helper_load(self.test_file)
+        raw_test_user_list, self.test_item_list = helper_load(self.test_file)
 
         if (self.nodrop):
-            self.train_nodrop_user_list, self.train_nodrop_item_list = helper_load(self.train_nodrop_file)
+            raw_train_nodrop_user_list, self.train_nodrop_item_list = helper_load(self.train_nodrop_file)
 
         if (self.candidate):
-            self.test_neg_user_list, self.test_neg_item_list = helper_load(self.test_neg_file)
+            raw_test_neg_user_list, self.test_neg_item_list = helper_load(self.test_neg_file)
         else:
-            self.test_neg_user_list, self.test_neg_item_list = None, None
+            raw_test_neg_user_list, self.test_neg_item_list = None, None
         self.pop_dict_list = []
+
+        # Filter users: only keep users who have training history
+        users_with_train_history = set(raw_train_user_list.keys())
+        print(f"Original users in train: {len(users_with_train_history)}")
+        
+        # Filter validation users to only include those with training history
+        filtered_valid_user_list = {user: items for user, items in raw_valid_user_list.items() 
+                                   if user in users_with_train_history}
+        print(f"Filtered valid users: {len(filtered_valid_user_list)} (from {len(raw_valid_user_list)})")
+        
+        # Filter test users to only include those with training history
+        filtered_test_user_list = {user: items for user, items in raw_test_user_list.items() 
+                                  if user in users_with_train_history}
+        print(f"Filtered test users: {len(filtered_test_user_list)} (from {len(raw_test_user_list)})")
+        
+        # Filter test negatives if they exist
+        if raw_test_neg_user_list is not None:
+            filtered_test_neg_user_list = {user: items for user, items in raw_test_neg_user_list.items() 
+                                          if user in users_with_train_history}
+            print(f"Filtered test neg users: {len(filtered_test_neg_user_list)} (from {len(raw_test_neg_user_list)})")
+        else:
+            filtered_test_neg_user_list = None
+            
+        # Filter nodrop users if they exist
+        if (self.nodrop):
+            filtered_train_nodrop_user_list = {user: items for user, items in raw_train_nodrop_user_list.items() 
+                                              if user in users_with_train_history}
+            print(f"Filtered nodrop users: {len(filtered_train_nodrop_user_list)} (from {len(raw_train_nodrop_user_list)})")
+        
+        # Create user ID mapping: sparse user IDs -> consecutive integers (0, 1, 2, ...)
+        original_users = sorted(list(users_with_train_history))
+        user_id_mapping = {original_id: new_id for new_id, original_id in enumerate(original_users)}
+        reverse_user_mapping = {new_id: original_id for original_id, new_id in user_id_mapping.items()}
+        
+        print(f"User ID mapping created: {len(user_id_mapping)} users")
+        print(f"Sample mapping: {dict(list(user_id_mapping.items())[:10])}")
+        
+        # Apply user ID remapping to all data structures
+        self.train_user_list = collections.defaultdict(list)
+        for original_user, items in raw_train_user_list.items():
+            new_user = user_id_mapping[original_user]
+            self.train_user_list[new_user] = items
+            
+        self.valid_user_list = collections.defaultdict(list)
+        for original_user, items in filtered_valid_user_list.items():
+            new_user = user_id_mapping[original_user]
+            self.valid_user_list[new_user] = items
+            
+        self.test_user_list = collections.defaultdict(list)
+        for original_user, items in filtered_test_user_list.items():
+            new_user = user_id_mapping[original_user]
+            self.test_user_list[new_user] = items
+            
+        if filtered_test_neg_user_list is not None:
+            self.test_neg_user_list = collections.defaultdict(list)
+            for original_user, items in filtered_test_neg_user_list.items():
+                new_user = user_id_mapping[original_user]
+                self.test_neg_user_list[new_user] = items
+        else:
+            self.test_neg_user_list = None
+            
+        if (self.nodrop):
+            self.train_nodrop_user_list = collections.defaultdict(list)
+            for original_user, items in filtered_train_nodrop_user_list.items():
+                new_user = user_id_mapping[original_user]
+                self.train_nodrop_user_list[new_user] = items
+
+        # Update train_item_list with new user IDs
+        self.train_item_list = collections.defaultdict(list)
+        for original_item, original_users in raw_train_item_list.items():
+            # Only include users that have training history
+            filtered_users = [user_id_mapping[user] for user in original_users if user in user_id_mapping]
+            if filtered_users:  # Only add if there are valid users
+                self.train_item_list[original_item] = filtered_users
+        
+        # Update trainUser and trainItem lists with new user IDs
+        self.trainUser = []
+        self.trainItem = []
+        for original_user, new_user in user_id_mapping.items():
+            if original_user in raw_train_user_list:
+                items = raw_train_user_list[original_user]
+                self.trainUser.extend([new_user] * len(items))
+                self.trainItem.extend(items)
 
         temp_lst = [train_item, valid_item, self.test_item_list]
 
-        self.users = list(set(self.train_user_list.keys()))
+        # Users are now consecutive integers from 0 to n_users-1
+        self.users = list(range(len(user_id_mapping)))
         self.items = list(set().union(*temp_lst))
         self.items.sort()
-        # print(self.items)
         self.n_users = len(self.users)
         self.n_items = len(self.items)
 
         print("n_users: ", self.n_users)
         print("n_items: ", self.n_items)
 
+        # Now we can safely iterate through consecutive user IDs
         for i in range(self.n_users):
             self.n_observations += len(self.train_user_list[i])
             self.n_interactions += len(self.train_user_list[i])
@@ -198,6 +283,10 @@ class AbstractData:
                     self.n_interactions += len(self.test_user_list[i])
         print('average number observations per a user: ',
               1.0 * self.n_observations / self.n_users)  # TODO: calculate here percentiles and set up n_pos_samples as X% percentile
+        
+        # Store the mapping for potential future use
+        self.user_id_mapping = user_id_mapping
+        self.reverse_user_mapping = reverse_user_mapping
         # Population matrix
         pop_dict = {}
         for item, users in self.train_item_list.items():
@@ -617,18 +706,34 @@ class MultiDatasetData(AbstractData):
             test_neg_file = os.path.join(dataset_path, 'test_neg.txt')
             
             # Load data for this dataset
-            train_user_list, train_item_set, train_item_list, trainUser, trainItem = helper_load_train(train_file)
-            valid_user_list, valid_item_set = helper_load(valid_file)
-            test_user_list, test_item_set = helper_load(test_file)
+            raw_train_user_list, train_item_set, raw_train_item_list, trainUser, trainItem = helper_load_train(train_file)
+            raw_valid_user_list, valid_item_set = helper_load(valid_file)
+            raw_test_user_list, test_item_set = helper_load(test_file)
             
             # Load test negatives if they exist
             if os.path.exists(test_neg_file):
-                test_neg_user_list, test_neg_item_list = helper_load(test_neg_file)
+                raw_test_neg_user_list, test_neg_item_list = helper_load(test_neg_file)
             else:
-                test_neg_user_list, test_neg_item_list = {}, []
+                raw_test_neg_user_list, test_neg_item_list = {}, []
             
-            # Get unique users and items for this dataset
-            dataset_users = set(train_user_list.keys())
+            # Filter users: only keep users who have training history
+            users_with_train_history = set(raw_train_user_list.keys())
+            print(f"  Dataset {dataset_name}: Original users in train: {len(users_with_train_history)}")
+            
+            # Filter validation, test, and test negatives to only include users with training history
+            filtered_valid_user_list = {user: items for user, items in raw_valid_user_list.items() 
+                                       if user in users_with_train_history}
+            filtered_test_user_list = {user: items for user, items in raw_test_user_list.items() 
+                                      if user in users_with_train_history}
+            filtered_test_neg_user_list = {user: items for user, items in raw_test_neg_user_list.items() 
+                                          if user in users_with_train_history}
+            
+            print(f"  Dataset {dataset_name}: Filtered valid users: {len(filtered_valid_user_list)} (from {len(raw_valid_user_list)})")
+            print(f"  Dataset {dataset_name}: Filtered test users: {len(filtered_test_user_list)} (from {len(raw_test_user_list)})")
+            print(f"  Dataset {dataset_name}: Filtered test neg users: {len(filtered_test_neg_user_list)} (from {len(raw_test_neg_user_list)})")
+            
+            # Get unique users and items for this dataset (only users with training history)
+            dataset_users = users_with_train_history
             dataset_items = set().union(train_item_set, valid_item_set, test_item_set)
             
             # Store dataset information
@@ -637,13 +742,13 @@ class MultiDatasetData(AbstractData):
                 'items': sorted(list(dataset_items)),
                 'n_users': len(dataset_users),
                 'n_items': len(dataset_items),
-                'n_interactions': sum(len(items) for items in train_user_list.values()),
+                'n_interactions': sum(len(items) for items in raw_train_user_list.values()),
                 'user_offset': user_offset,
                 'item_offset': item_offset,
-                'train_user_list': train_user_list,
-                'valid_user_list': valid_user_list,
-                'test_user_list': test_user_list,
-                'test_neg_user_list': test_neg_user_list,
+                'train_user_list': raw_train_user_list,
+                'valid_user_list': filtered_valid_user_list,
+                'test_user_list': filtered_test_user_list,
+                'test_neg_user_list': filtered_test_neg_user_list,
                 'path': dataset_path  # Store the original dataset path
             }
             
@@ -655,21 +760,21 @@ class MultiDatasetData(AbstractData):
                 all_users.add(adjusted_user)
                 
                 # Map original user interactions to adjusted IDs
-                if user in train_user_list:
-                    self.train_user_list[adjusted_user] = [item + item_offset for item in train_user_list[user]]
+                if user in raw_train_user_list:
+                    self.train_user_list[adjusted_user] = [item + item_offset for item in raw_train_user_list[user]]
                     # Add to global trainUser/trainItem lists
-                    self.trainUser.extend([adjusted_user] * len(train_user_list[user]))
-                    self.trainItem.extend([item + item_offset for item in train_user_list[user]])
+                    self.trainUser.extend([adjusted_user] * len(raw_train_user_list[user]))
+                    self.trainItem.extend([item + item_offset for item in raw_train_user_list[user]])
                     
-                if user in valid_user_list:
-                    self.valid_user_list[adjusted_user] = [item + item_offset for item in valid_user_list[user]]
+                if user in filtered_valid_user_list:
+                    self.valid_user_list[adjusted_user] = [item + item_offset for item in filtered_valid_user_list[user]]
                     
-                if user in test_user_list:
-                    self.test_user_list[adjusted_user] = [item + item_offset for item in test_user_list[user]]
+                if user in filtered_test_user_list:
+                    self.test_user_list[adjusted_user] = [item + item_offset for item in filtered_test_user_list[user]]
                 
                 # Add test negatives with adjusted offsets
-                if user in test_neg_user_list:
-                    self.test_neg_user_list[adjusted_user] = [item + item_offset for item in test_neg_user_list[user]]
+                if user in filtered_test_neg_user_list:
+                    self.test_neg_user_list[adjusted_user] = [item + item_offset for item in filtered_test_neg_user_list[user]]
             
             # Add items with offset
             for item in dataset_items:
@@ -680,7 +785,8 @@ class MultiDatasetData(AbstractData):
             item_offset += len(dataset_items)
         
         # Set combined dataset properties
-        self.users = sorted(list(all_users))
+        # Users are already consecutive integers due to offset mechanism
+        self.users = list(range(len(all_users)))
         self.items = sorted(list(all_items))
         self.n_users = len(self.users)
         self.n_items = len(self.items)
