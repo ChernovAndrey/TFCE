@@ -97,6 +97,8 @@ class TFCEMLP(AbstractModel):
         self.embed_size = args.hidden_size
         self.lm_model = args.lm_model
         self.model_version = args.model_version
+        self.is_batch_ensemble = args.is_batch_ensemble
+        self.n_ensemble_members = 4  # Number of ensemble members for batch ensemble
 
         self.init_item_cf_embeds = data.item_cf_embeds
         self.init_item_cf_embeds = torch.tensor(self.init_item_cf_embeds, dtype=torch.float32).to(self.device)
