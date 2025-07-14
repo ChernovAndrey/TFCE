@@ -148,6 +148,8 @@ def parse_args():
                                 help='number of positive samples')
             parser.add_argument('--is_batch_ensemble', action='store_true', default=False,
                                 help='Enable batch ensemble training with shared weights over MLP instead of simple MLPs')
+            parser.add_argument('--n_ensemble_members', type=int, default=4,
+                                help='Number of ensemble members for batch ensemble (default: 4)')
 
         if('LIntCF' in args.model_name):
             parser.add_argument('--tau', type=float, default=0.1,

@@ -98,7 +98,7 @@ class TFCEMLP(AbstractModel):
         self.lm_model = args.lm_model
         self.model_version = args.model_version
         self.is_batch_ensemble = args.is_batch_ensemble
-        self.n_ensemble_members = 4  # Number of ensemble members for batch ensemble
+        self.n_ensemble_members = args.n_ensemble_members if self.is_batch_ensemble else 1
 
         self.init_item_cf_embeds = data.item_cf_embeds
         self.init_item_cf_embeds = torch.tensor(self.init_item_cf_embeds, dtype=torch.float32).to(self.device)
@@ -123,27 +123,63 @@ class TFCEMLP(AbstractModel):
         else:
             multiplier = 9 / 32  # for dimension = 4096
 
-        if (self.model_version == 'homo'):  # Linear mapping
-            self.mlp = nn.Sequential(
-                nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
-            )
+        if self.is_batch_ensemble:
+            # Batch ensemble implementation with shared weights and multiple heads
+            if (self.model_version == 'homo'):  # Linear mapping
+                # Shared layer (no shared layer for homo version, just multiple heads)
+                self.mlp_heads = nn.ModuleList([
+                    nn.Linear(self.init_embed_shape, self.embed_size, bias=False)
+                    for _ in range(self.n_ensemble_members)
+                ])
+                
+                self.mlp_user_heads = nn.ModuleList([
+                    nn.Linear(self.init_embed_shape, self.embed_size, bias=False)
+                    for _ in range(self.n_ensemble_members)
+                ])
+            else:  # MLP
+                # Shared layers
+                self.mlp_shared = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                    nn.LeakyReLU()
+                )
+                self.mlp_user_shared = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                    nn.LeakyReLU()
+                )
+                
+                # Multiple heads for final prediction
+                self.mlp_heads = nn.ModuleList([
+                    nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+                    for _ in range(self.n_ensemble_members)
+                ])
+                
+                self.mlp_user_heads = nn.ModuleList([
+                    nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+                    for _ in range(self.n_ensemble_members)
+                ])
+        else:
+            # Original implementation
+            if (self.model_version == 'homo'):  # Linear mapping
+                self.mlp = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
+                )
 
-            self.mlp_user = nn.Sequential(
-                nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
-            )
-        else:  # MLP
+                self.mlp_user = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
+                )
+            else:  # MLP
 
-            self.mlp = nn.Sequential(
-                nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
-                nn.LeakyReLU(),
-                nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
-            )
+                self.mlp = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                    nn.LeakyReLU(),
+                    nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+                )
 
-            self.mlp_user = nn.Sequential(
-                nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
-                nn.LeakyReLU(),
-                nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
-            )
+                self.mlp_user = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                    nn.LeakyReLU(),
+                    nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+                )
 
     def init_embedding(self):
         pass
@@ -166,8 +202,42 @@ class TFCEMLP(AbstractModel):
                                                                          [self.data.n_users, self.data.n_items])
 
     def compute(self):
-        users = self.mlp_user(self.init_user_cf_embeds)
-        items = self.mlp(self.init_item_cf_embeds)
+        if self.is_batch_ensemble:
+            if self.model_version == 'homo':
+                # For homo version, directly apply each head and average
+                user_outputs = []
+                item_outputs = []
+                
+                for head_idx in range(self.n_ensemble_members):
+                    user_out = self.mlp_user_heads[head_idx](self.init_user_cf_embeds)
+                    item_out = self.mlp_heads[head_idx](self.init_item_cf_embeds)
+                    user_outputs.append(user_out)
+                    item_outputs.append(item_out)
+                
+                # Average ensemble predictions
+                users = torch.stack(user_outputs).mean(dim=0)
+                items = torch.stack(item_outputs).mean(dim=0)
+            else:
+                # For MLP version, apply shared layers first, then heads
+                user_shared = self.mlp_user_shared(self.init_user_cf_embeds)
+                item_shared = self.mlp_shared(self.init_item_cf_embeds)
+                
+                user_outputs = []
+                item_outputs = []
+                
+                for head_idx in range(self.n_ensemble_members):
+                    user_out = self.mlp_user_heads[head_idx](user_shared)
+                    item_out = self.mlp_heads[head_idx](item_shared)
+                    user_outputs.append(user_out)
+                    item_outputs.append(item_out)
+                
+                # Average ensemble predictions
+                users = torch.stack(user_outputs).mean(dim=0)
+                items = torch.stack(item_outputs).mean(dim=0)
+        else:
+            # Original implementation
+            users = self.mlp_user(self.init_user_cf_embeds)
+            items = self.mlp(self.init_item_cf_embeds)
 
         return users, items
 
