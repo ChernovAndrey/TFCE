@@ -146,6 +146,17 @@ def parse_args():
                                 help='True then only one positive sample is used')
             parser.add_argument('--n_pos_samples', type=int, default=5,
                                 help='number of positive samples')
+            
+            # TFCESAE specific parameters
+            if args.model_name == 'TFCESAE':
+                parser.add_argument('--sae_num_layers', type=int, default=2,
+                                help='Number of layers in the self-attention encoder')
+                parser.add_argument('--sae_num_heads', type=int, default=8,
+                                help='Number of attention heads in the self-attention encoder')
+                parser.add_argument('--sae_dropout', type=float, default=0.1,
+                                help='Dropout rate for the self-attention encoder')
+                parser.add_argument('--sae_shared_encoder', action='store_true',
+                                help='Whether to use a shared encoder for both items and users')
 
         if('LIntCF' in args.model_name):
             parser.add_argument('--tau', type=float, default=0.1,
