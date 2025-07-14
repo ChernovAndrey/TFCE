@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import time
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -124,39 +125,64 @@ class TFCEMLP(AbstractModel):
             multiplier = 9 / 32  # for dimension = 4096
 
         if self.is_batch_ensemble:
-            # Batch ensemble implementation with shared weights and multiple heads
+            # BatchEnsemble implementation with shared weights and rank-1 adaptation (Wen et al., ICLR 2020)
             if (self.model_version == 'homo'):  # Linear mapping
-                # Shared layer (no shared layer for homo version, just multiple heads)
-                self.mlp_heads = nn.ModuleList([
-                    nn.Linear(self.init_embed_shape, self.embed_size, bias=False)
-                    for _ in range(self.n_ensemble_members)
-                ])
+                # Shared weight matrix
+                self.mlp_shared_weight = nn.Parameter(torch.randn(self.embed_size, self.init_embed_shape))
+                self.mlp_user_shared_weight = nn.Parameter(torch.randn(self.embed_size, self.init_embed_shape))
                 
-                self.mlp_user_heads = nn.ModuleList([
-                    nn.Linear(self.init_embed_shape, self.embed_size, bias=False)
-                    for _ in range(self.n_ensemble_members)
-                ])
+                # Rank-1 adaptation vectors r_i and s_i for each ensemble member
+                self.mlp_r_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, self.embed_size))
+                self.mlp_s_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, self.init_embed_shape))
+                self.mlp_user_r_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, self.embed_size))
+                self.mlp_user_s_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, self.init_embed_shape))
+                
+                # Initialize shared weights
+                nn.init.kaiming_uniform_(self.mlp_shared_weight, a=math.sqrt(5))
+                nn.init.kaiming_uniform_(self.mlp_user_shared_weight, a=math.sqrt(5))
+                
+                # Initialize rank-1 vectors to have small variance
+                nn.init.normal_(self.mlp_r_vectors, mean=1.0, std=0.1)
+                nn.init.normal_(self.mlp_s_vectors, mean=1.0, std=0.1) 
+                nn.init.normal_(self.mlp_user_r_vectors, mean=1.0, std=0.1)
+                nn.init.normal_(self.mlp_user_s_vectors, mean=1.0, std=0.1)
             else:  # MLP
-                # Shared layers
-                self.mlp_shared = nn.Sequential(
-                    nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
-                    nn.LeakyReLU()
-                )
-                self.mlp_user_shared = nn.Sequential(
-                    nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
-                    nn.LeakyReLU()
-                )
+                # Shared weight matrices for both layers
+                hidden_dim = int(multiplier * self.init_embed_shape)
                 
-                # Multiple heads for final prediction
-                self.mlp_heads = nn.ModuleList([
-                    nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
-                    for _ in range(self.n_ensemble_members)
-                ])
+                # First layer shared weights and rank-1 vectors
+                self.mlp_layer1_shared_weight = nn.Parameter(torch.randn(hidden_dim, self.init_embed_shape))
+                self.mlp_layer1_r_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, hidden_dim))
+                self.mlp_layer1_s_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, self.init_embed_shape))
                 
-                self.mlp_user_heads = nn.ModuleList([
-                    nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
-                    for _ in range(self.n_ensemble_members)
-                ])
+                self.mlp_user_layer1_shared_weight = nn.Parameter(torch.randn(hidden_dim, self.init_embed_shape))
+                self.mlp_user_layer1_r_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, hidden_dim))
+                self.mlp_user_layer1_s_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, self.init_embed_shape))
+                
+                # Second layer shared weights and rank-1 vectors
+                self.mlp_layer2_shared_weight = nn.Parameter(torch.randn(self.embed_size, hidden_dim))
+                self.mlp_layer2_r_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, self.embed_size))
+                self.mlp_layer2_s_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, hidden_dim))
+                
+                self.mlp_user_layer2_shared_weight = nn.Parameter(torch.randn(self.embed_size, hidden_dim))
+                self.mlp_user_layer2_r_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, self.embed_size))
+                self.mlp_user_layer2_s_vectors = nn.Parameter(torch.randn(self.n_ensemble_members, hidden_dim))
+                
+                # Initialize shared weights using standard initialization
+                nn.init.kaiming_uniform_(self.mlp_layer1_shared_weight, a=math.sqrt(5))
+                nn.init.kaiming_uniform_(self.mlp_layer2_shared_weight, a=math.sqrt(5))
+                nn.init.kaiming_uniform_(self.mlp_user_layer1_shared_weight, a=math.sqrt(5))
+                nn.init.kaiming_uniform_(self.mlp_user_layer2_shared_weight, a=math.sqrt(5))
+                
+                # Initialize rank-1 vectors to have small variance around 1.0
+                nn.init.normal_(self.mlp_layer1_r_vectors, mean=1.0, std=0.1)
+                nn.init.normal_(self.mlp_layer1_s_vectors, mean=1.0, std=0.1)
+                nn.init.normal_(self.mlp_user_layer1_r_vectors, mean=1.0, std=0.1)
+                nn.init.normal_(self.mlp_user_layer1_s_vectors, mean=1.0, std=0.1)
+                nn.init.normal_(self.mlp_layer2_r_vectors, mean=1.0, std=0.1)
+                nn.init.normal_(self.mlp_layer2_s_vectors, mean=1.0, std=0.1)
+                nn.init.normal_(self.mlp_user_layer2_r_vectors, mean=1.0, std=0.1)
+                nn.init.normal_(self.mlp_user_layer2_s_vectors, mean=1.0, std=0.1)
         else:
             # Original implementation
             if (self.model_version == 'homo'):  # Linear mapping
@@ -204,13 +230,27 @@ class TFCEMLP(AbstractModel):
     def compute(self):
         if self.is_batch_ensemble:
             if self.model_version == 'homo':
-                # For homo version, directly apply each head and average
+                # BatchEnsemble with rank-1 adaptation for homo version
                 user_outputs = []
                 item_outputs = []
                 
-                for head_idx in range(self.n_ensemble_members):
-                    user_out = self.mlp_user_heads[head_idx](self.init_user_cf_embeds)
-                    item_out = self.mlp_heads[head_idx](self.init_item_cf_embeds)
+                for ensemble_idx in range(self.n_ensemble_members):
+                    # Create ensemble-specific weight matrix: W_i = W ⊙ (r_i @ s_i^T)
+                    # where ⊙ is Hadamard product
+                    r_i = self.mlp_r_vectors[ensemble_idx:ensemble_idx+1]  # (1, embed_size)
+                    s_i = self.mlp_s_vectors[ensemble_idx:ensemble_idx+1]  # (1, init_embed_shape)
+                    rank_one_matrix = torch.mm(r_i.T, s_i)  # (embed_size, init_embed_shape)
+                    ensemble_weight = self.mlp_shared_weight * rank_one_matrix
+                    
+                    user_r_i = self.mlp_user_r_vectors[ensemble_idx:ensemble_idx+1]
+                    user_s_i = self.mlp_user_s_vectors[ensemble_idx:ensemble_idx+1]
+                    user_rank_one_matrix = torch.mm(user_r_i.T, user_s_i)
+                    user_ensemble_weight = self.mlp_user_shared_weight * user_rank_one_matrix
+                    
+                    # Apply ensemble-specific transformations
+                    item_out = F.linear(self.init_item_cf_embeds, ensemble_weight)
+                    user_out = F.linear(self.init_user_cf_embeds, user_ensemble_weight)
+                    
                     user_outputs.append(user_out)
                     item_outputs.append(item_out)
                 
@@ -218,16 +258,41 @@ class TFCEMLP(AbstractModel):
                 users = torch.stack(user_outputs).mean(dim=0)
                 items = torch.stack(item_outputs).mean(dim=0)
             else:
-                # For MLP version, apply shared layers first, then heads
-                user_shared = self.mlp_user_shared(self.init_user_cf_embeds)
-                item_shared = self.mlp_shared(self.init_item_cf_embeds)
-                
+                # BatchEnsemble with rank-1 adaptation for MLP version
                 user_outputs = []
                 item_outputs = []
                 
-                for head_idx in range(self.n_ensemble_members):
-                    user_out = self.mlp_user_heads[head_idx](user_shared)
-                    item_out = self.mlp_heads[head_idx](item_shared)
+                for ensemble_idx in range(self.n_ensemble_members):
+                    # First layer
+                    r1_i = self.mlp_layer1_r_vectors[ensemble_idx:ensemble_idx+1]
+                    s1_i = self.mlp_layer1_s_vectors[ensemble_idx:ensemble_idx+1]
+                    rank_one_matrix1 = torch.mm(r1_i.T, s1_i)
+                    ensemble_weight1 = self.mlp_layer1_shared_weight * rank_one_matrix1
+                    
+                    user_r1_i = self.mlp_user_layer1_r_vectors[ensemble_idx:ensemble_idx+1]
+                    user_s1_i = self.mlp_user_layer1_s_vectors[ensemble_idx:ensemble_idx+1]
+                    user_rank_one_matrix1 = torch.mm(user_r1_i.T, user_s1_i)
+                    user_ensemble_weight1 = self.mlp_user_layer1_shared_weight * user_rank_one_matrix1
+                    
+                    # Apply first layer
+                    item_hidden = F.leaky_relu(F.linear(self.init_item_cf_embeds, ensemble_weight1))
+                    user_hidden = F.leaky_relu(F.linear(self.init_user_cf_embeds, user_ensemble_weight1))
+                    
+                    # Second layer
+                    r2_i = self.mlp_layer2_r_vectors[ensemble_idx:ensemble_idx+1]
+                    s2_i = self.mlp_layer2_s_vectors[ensemble_idx:ensemble_idx+1]
+                    rank_one_matrix2 = torch.mm(r2_i.T, s2_i)
+                    ensemble_weight2 = self.mlp_layer2_shared_weight * rank_one_matrix2
+                    
+                    user_r2_i = self.mlp_user_layer2_r_vectors[ensemble_idx:ensemble_idx+1]
+                    user_s2_i = self.mlp_user_layer2_s_vectors[ensemble_idx:ensemble_idx+1]
+                    user_rank_one_matrix2 = torch.mm(user_r2_i.T, user_s2_i)
+                    user_ensemble_weight2 = self.mlp_user_layer2_shared_weight * user_rank_one_matrix2
+                    
+                    # Apply second layer
+                    item_out = F.linear(item_hidden, ensemble_weight2)
+                    user_out = F.linear(user_hidden, user_ensemble_weight2)
+                    
                     user_outputs.append(user_out)
                     item_outputs.append(item_out)
                 
