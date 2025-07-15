@@ -148,6 +148,8 @@ def parse_args():
                                 help='number of positive samples')
             parser.add_argument('--avg_after_mlp', action='store_true',
                                 help='If True, average embeddings after MLP processing instead of before')
+            parser.add_argument('--layer_specific_mlp', action='store_true',
+                                help='If True, create unique MLP for each layer (requires avg_after_mlp=True)')
 
         if('LIntCF' in args.model_name):
             parser.add_argument('--tau', type=float, default=0.1,

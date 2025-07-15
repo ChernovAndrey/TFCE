@@ -98,6 +98,11 @@ class TFCEMLP(AbstractModel):
         self.lm_model = args.lm_model
         self.model_version = args.model_version
         self.avg_after_mlp = getattr(args, 'avg_after_mlp', False)
+        self.layer_specific_mlp = getattr(args, 'layer_specific_mlp', False)
+        
+        # Validation: layer_specific_mlp requires avg_after_mlp
+        if self.layer_specific_mlp and not self.avg_after_mlp:
+            raise ValueError("layer_specific_mlp=True requires avg_after_mlp=True")
 
         self.init_item_cf_embeds = data.item_cf_embeds
         self.init_item_cf_embeds = torch.tensor(self.init_item_cf_embeds, dtype=torch.float32).to(self.device)
@@ -122,27 +127,57 @@ class TFCEMLP(AbstractModel):
         else:
             multiplier = 9 / 32  # for dimension = 4096
 
-        if (self.model_version == 'homo'):  # Linear mapping
-            self.mlp = nn.Sequential(
-                nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
-            )
+        if self.layer_specific_mlp:
+            # Create separate MLPs for each layer (n_layers + 1 for the initial embedding)
+            num_layers = self.n_layers + 1
+            self.mlp_layers = nn.ModuleList()
+            self.mlp_user_layers = nn.ModuleList()
+            
+            for layer_idx in range(num_layers):
+                if (self.model_version == 'homo'):  # Linear mapping
+                    item_mlp = nn.Sequential(
+                        nn.Linear(self.init_embed_shape, self.embed_size, bias=False)
+                    )
+                    user_mlp = nn.Sequential(
+                        nn.Linear(self.init_embed_shape, self.embed_size, bias=False)
+                    )
+                else:  # MLP
+                    item_mlp = nn.Sequential(
+                        nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                        nn.LeakyReLU(),
+                        nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+                    )
+                    user_mlp = nn.Sequential(
+                        nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                        nn.LeakyReLU(),
+                        nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+                    )
+                
+                self.mlp_layers.append(item_mlp)
+                self.mlp_user_layers.append(user_mlp)
+        else:
+            # Original behavior: single MLP for all layers
+            if (self.model_version == 'homo'):  # Linear mapping
+                self.mlp = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
+                )
 
-            self.mlp_user = nn.Sequential(
-                nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
-            )
-        else:  # MLP
+                self.mlp_user = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
+                )
+            else:  # MLP
 
-            self.mlp = nn.Sequential(
-                nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
-                nn.LeakyReLU(),
-                nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
-            )
+                self.mlp = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                    nn.LeakyReLU(),
+                    nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+                )
 
-            self.mlp_user = nn.Sequential(
-                nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
-                nn.LeakyReLU(),
-                nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
-            )
+                self.mlp_user = nn.Sequential(
+                    nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                    nn.LeakyReLU(),
+                    nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+                )
 
     def init_embedding(self):
         pass
@@ -181,11 +216,18 @@ class TFCEMLP(AbstractModel):
             user_layer_outputs = []
             item_layer_outputs = []
             
-            for user_layer_emb in self.all_layer_user_embeds:
-                user_layer_outputs.append(self.mlp_user(user_layer_emb))
-            
-            for item_layer_emb in self.all_layer_item_embeds:
-                item_layer_outputs.append(self.mlp(item_layer_emb))
+            if self.layer_specific_mlp:
+                # Use layer-specific MLPs
+                for layer_idx, (user_layer_emb, item_layer_emb) in enumerate(zip(self.all_layer_user_embeds, self.all_layer_item_embeds)):
+                    user_layer_outputs.append(self.mlp_user_layers[layer_idx](user_layer_emb))
+                    item_layer_outputs.append(self.mlp_layers[layer_idx](item_layer_emb))
+            else:
+                # Use same MLP for all layers
+                for user_layer_emb in self.all_layer_user_embeds:
+                    user_layer_outputs.append(self.mlp_user(user_layer_emb))
+                
+                for item_layer_emb in self.all_layer_item_embeds:
+                    item_layer_outputs.append(self.mlp(item_layer_emb))
             
             # Average the MLP outputs
             users = torch.mean(torch.stack(user_layer_outputs, dim=0), dim=0)
