@@ -97,6 +97,7 @@ class TFCEMLP(AbstractModel):
         self.embed_size = args.hidden_size
         self.lm_model = args.lm_model
         self.model_version = args.model_version
+        self.avg_after_mlp = getattr(args, 'avg_after_mlp', False)
 
         self.init_item_cf_embeds = data.item_cf_embeds
         self.init_item_cf_embeds = torch.tensor(self.init_item_cf_embeds, dtype=torch.float32).to(self.device)
@@ -157,15 +158,42 @@ class TFCEMLP(AbstractModel):
         for layer in range(self.n_layers):
             all_emb = torch.sparse.mm(g_droped, all_emb)
             embs.append(all_emb)
-        embs = torch.stack(embs, dim=1)
-
-        light_out = torch.mean(embs, dim=1)
-        self.init_user_cf_embeds, self.init_item_cf_embeds = torch.split(light_out,
-                                                                         [self.data.n_users, self.data.n_items])
+        
+        if self.avg_after_mlp:
+            # Store all layer embeddings separately for MLP processing
+            self.all_layer_user_embeds = []
+            self.all_layer_item_embeds = []
+            
+            for layer_emb in embs:
+                user_emb, item_emb = torch.split(layer_emb, [self.data.n_users, self.data.n_items])
+                self.all_layer_user_embeds.append(user_emb)
+                self.all_layer_item_embeds.append(item_emb)
+        else:
+            # Original behavior: average first, then split
+            embs = torch.stack(embs, dim=1)
+            light_out = torch.mean(embs, dim=1)
+            self.init_user_cf_embeds, self.init_item_cf_embeds = torch.split(light_out,
+                                                                             [self.data.n_users, self.data.n_items])
 
     def compute(self):
-        users = self.mlp_user(self.init_user_cf_embeds)
-        items = self.mlp(self.init_item_cf_embeds)
+        if self.avg_after_mlp:
+            # Apply MLP to each layer embedding separately, then average
+            user_layer_outputs = []
+            item_layer_outputs = []
+            
+            for user_layer_emb in self.all_layer_user_embeds:
+                user_layer_outputs.append(self.mlp_user(user_layer_emb))
+            
+            for item_layer_emb in self.all_layer_item_embeds:
+                item_layer_outputs.append(self.mlp(item_layer_emb))
+            
+            # Average the MLP outputs
+            users = torch.mean(torch.stack(user_layer_outputs, dim=0), dim=0)
+            items = torch.mean(torch.stack(item_layer_outputs, dim=0), dim=0)
+        else:
+            # Original behavior: apply MLP to averaged embeddings
+            users = self.mlp_user(self.init_user_cf_embeds)
+            items = self.mlp(self.init_item_cf_embeds)
 
         return users, items
 
