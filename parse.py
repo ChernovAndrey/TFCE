@@ -146,6 +146,8 @@ def parse_args():
                                 help='True then only one positive sample is used')
             parser.add_argument('--n_pos_samples', type=int, default=5,
                                 help='number of positive samples')
+            parser.add_argument('--avg_after_mlp', action='store_true',
+                                help='If True, average embeddings after MLP processing instead of before')
 
         if('LIntCF' in args.model_name):
             parser.add_argument('--tau', type=float, default=0.1,
