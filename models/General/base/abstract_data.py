@@ -77,7 +77,7 @@ class AbstractData:
 
         self.user_neighbors = {}
 
-        self.is_one_pos_item = getattr(args, 'is_one_pos_item', False)
+        self.is_one_pos_item = getattr(args, 'is_one_pos_item', True)
         self.n_pos_samples =int(args.n_pos_samples) if hasattr(args, 'n_pos_samples') else 1
         self.path = args.data_path + args.dataset + '/cf_data/'
         self.train_file = self.path + 'train.txt'
