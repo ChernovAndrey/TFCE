@@ -169,7 +169,7 @@ class TFCEMLP(AbstractModel):
                                                                          [self.data.n_users, self.data.n_items])
 
     def compute(self):
-        if self.model != 'one_tower':
+        if self.model_version != 'one_tower':
             users = self.mlp_user(self.init_user_cf_embeds)
         else:
             users = self.mlp(self.init_user_cf_embeds)
