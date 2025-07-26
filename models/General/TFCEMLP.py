@@ -68,7 +68,6 @@ class TFCEMLP_Data(AbstractData):
         }
         self.item_cf_embeds = np.load(loading_path + embedding_path_dict[self.lm_model])
 
-
         def group_agg(group_data, embedding_dict, key='item_id'):
             ids = group_data[key].values
             embeds = [embedding_dict[id] for id in ids]
@@ -105,8 +104,6 @@ class TFCEMLP(AbstractModel):
         self.init_user_cf_embeds = data.user_cf_embeds
         self.init_user_cf_embeds = torch.tensor(self.init_user_cf_embeds, dtype=torch.float32).to(self.device)
 
-
-
         self.set_graph_embeddings()
         # To keep the same parameter size
         multiplier_dict = {
@@ -129,8 +126,15 @@ class TFCEMLP(AbstractModel):
             self.mlp_user = nn.Sequential(
                 nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
             )
-        else:  # MLP
+        elif self.model_version == 'one_tower':  # MLP
 
+            self.mlp = nn.Sequential(
+                nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                nn.LeakyReLU(),
+                nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+            )
+            print('One tower model is applied')
+        else:
             self.mlp = nn.Sequential(
                 nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
                 nn.LeakyReLU(),
@@ -142,6 +146,7 @@ class TFCEMLP(AbstractModel):
                 nn.LeakyReLU(),
                 nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
             )
+            print('Two towers model is applied')
 
     def init_embedding(self):
         pass
@@ -164,7 +169,10 @@ class TFCEMLP(AbstractModel):
                                                                          [self.data.n_users, self.data.n_items])
 
     def compute(self):
-        users = self.mlp_user(self.init_user_cf_embeds)
+        if self.model != 'one_tower':
+            users = self.mlp_user(self.init_user_cf_embeds)
+        else:
+            users = self.mlp(self.init_user_cf_embeds)
         items = self.mlp(self.init_item_cf_embeds)
 
         return users, items
