@@ -25,9 +25,9 @@ class AlphaRec_RS(AbstractRS):
 
         pbar = tqdm(enumerate(self.data.train_loader), mininterval=2, total=len(self.data.train_loader))
         for batch_i, batch in pbar:
-
             batch = [x.to(self.device) for x in batch]
-            users, pos_items, users_pop, pos_items_pop = batch[0], batch[1], batch[2], batch[3]
+            users, pos_items, users_pop, pos_items_pop, mask = batch[0], batch[1], batch[2], batch[3], \
+                batch[6]
 
             if self.args.infonce == 0 or self.args.neg_sample != -1:
                 neg_items = batch[4]
@@ -35,7 +35,7 @@ class AlphaRec_RS(AbstractRS):
 
             self.model.train()
 
-            loss = self.model(users, pos_items, neg_items)
+            loss = self.model(users, pos_items, neg_items, mask)
 
             self.optimizer.zero_grad()
             loss.backward()
@@ -174,13 +174,16 @@ class AlphaRec(AbstractModel):
 
         return users, items
 
-    def forward(self, users, pos_items, neg_items):
+    def forward(self, users, pos_items, neg_items, mask):
 
         all_users, all_items = self.compute()
 
         users_emb = all_users[users]
         pos_emb = all_items[pos_items]
         neg_emb = all_items[neg_items]
+
+        if not self.data.is_one_pos_item:
+            return supcon_loss(users_emb, pos_emb, neg_emb, mask, self.tau, 0)
 
         if (self.train_norm):
             users_emb = F.normalize(users_emb, dim=-1)
