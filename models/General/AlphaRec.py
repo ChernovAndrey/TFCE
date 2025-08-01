@@ -127,7 +127,7 @@ class AlphaRec(AbstractModel):
                 nn.Linear(self.init_embed_shape, self.embed_size, bias=False)  # homo
             )
 
-        else:  # MLP
+        elif (self.model_version == 'mlp'):  # MLP
             self.mlp = nn.Sequential(
                 nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
                 nn.LeakyReLU(),
@@ -142,7 +142,19 @@ class AlphaRec(AbstractModel):
 
             # print('two different mlps')
             print('one different mlp')
+        else: # two towers
+            self.mlp = nn.Sequential(
+                nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                nn.LeakyReLU(),
+                nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+            )
 
+            self.mlp_user = nn.Sequential(
+                nn.Linear(self.init_embed_shape, int(multiplier * self.init_embed_shape)),
+                nn.LeakyReLU(),
+                nn.Linear(int(multiplier * self.init_embed_shape), self.embed_size)
+            )
+            print('two different mlps')
     def init_embedding(self):
         pass
 
@@ -152,8 +164,10 @@ class AlphaRec(AbstractModel):
 
 
     def compute(self):
-        users_cf_emb = self.mlp(self.init_user_cf_embeds)
-        # users_cf_emb = self.mlp_user(self.init_user_cf_embeds)
+        if self.model_version == 'two_tower':
+            users_cf_emb = self.mlp_user(self.init_user_cf_embeds)
+        else:
+            users_cf_emb = self.mlp(self.init_user_cf_embeds)
         items_cf_emb = self.mlp(self.init_item_cf_embeds)
 
         users_emb = users_cf_emb

@@ -139,7 +139,7 @@ def parse_args():
                         choices=['bert', 'roberta', 'llama2_7b', 'llama3_7b', 'mistral_7b', 'v2', 'v3', 'SFR', 'v3_shuffle'],
                         help='The base language model')
             parser.add_argument('--model_version', type=str, default='homo',
-                        choices=['mlp', 'homo', 'one_tower'],
+                        choices=['mlp', 'homo', 'one_tower', 'two_tower'],
                         help='The mapping method')
 
             parser.add_argument('--is_one_pos_item', action='store_true',
